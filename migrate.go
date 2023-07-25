@@ -24,13 +24,13 @@ type InitSchemaFunc func(engine *xorm.Engine) error
 type Options struct {
 	// TableName 默认migrations
 	TableName string
-	// IDColumnName 默认id
+	// VersionColumnName
 	VersionColumnName string
-	// IDColumnSize
+	// VersionColumnSize
 	VersionColumnSize int64
 	// UseTransaction
 	//UseTransaction bool
-	// 如果数据库中有未知的迁移id, ValidateUnknownMigrations将导致迁移失败
+	// 如果数据库中有未知的迁移version, ValidateUnknownMigrations将导致迁移失败
 	ValidateUnknownMigrations bool
 	// 启用硬删除, 默认软删除
 	HardDelete bool
@@ -58,21 +58,21 @@ type XorMigrate struct {
 	initSchema InitSchemaFunc
 }
 
-// ReservedIDError 错误使用保留version作为某次迁移version
-type ReservedIDError struct {
+// ReservedVersionError 错误使用保留version作为某次迁移version
+type ReservedVersionError struct {
 	Version string
 }
 
-func (e *ReservedIDError) Error() string {
+func (e *ReservedVersionError) Error() string {
 	return fmt.Sprintf(`xormigrate: Reserved migration Version: %s"`, e.Version)
 }
 
-// DuplicatedIDError 存在重复ID
-type DuplicatedIDError struct {
+// DuplicatedVersionError 存在重复Version
+type DuplicatedVersionError struct {
 	Version string
 }
 
-func (e *DuplicatedIDError) Error() string {
+func (e *DuplicatedVersionError) Error() string {
 	return fmt.Sprintf(`xormigrate: Duplicated migration Version: "%s"`, e.Version)
 }
 
@@ -93,13 +93,13 @@ var (
 	// ErrNoMigrationDefined 未定义迁移
 	ErrNoMigrationDefined = errors.New("xormigrate: No migration defined")
 	
-	// ErrMissingID 当迁移ID等于""时
+	// ErrMissingVersion 当迁移Version等于""时
 	ErrMissingVersion = errors.New("xormigrate: Missing Version in migration")
 	
 	// ErrNoRunMigration 在运行RollbackLast时发现正在运行迁移时返回
 	ErrNoRunMigration = errors.New("xormigrate: Could not find last run migration")
 	
-	// ErrMigrationIDDoesNotExist 迁移或回滚到迁移列表中不存在的迁移ID时返回
+	// ErrMigrationVersionDoesNotExist 迁移或回滚到迁移列表中不存在的迁移Version时返回
 	ErrMigrationVersionDoesNotExist = errors.New("xormigrate: Tried to migrate to an Version that doesn't exist")
 	
 	// ErrUnknownPastMigration 迁移存在于数据库中但是不存在于代码中
@@ -135,20 +135,20 @@ func (x *XorMigrate) Migrate() error {
 	if !x.hasMigrations() {
 		return ErrNoMigrationDefined
 	}
-	var targetMigrationID string
+	var targetMigrationVersion string
 	if len(x.migrations) > 0 {
-		targetMigrationID = x.migrations[len(x.migrations)-1].Version
+		targetMigrationVersion = x.migrations[len(x.migrations)-1].Version
 	}
-	return x.migrate(targetMigrationID)
+	return x.migrate(targetMigrationVersion)
 }
 
-// MigrateTo 根据migrationID进行迁移
-// MigrateTo 执行所有尚未运行的迁移,直到匹配' migrationID '的迁移
-func (x *XorMigrate) MigrateTo(migrationID string) error {
-	if err := x.checkIDExist(migrationID); err != nil {
+// MigrateTo 根据migrationVersion进行迁移
+// MigrateTo 执行所有尚未运行的迁移,直到匹配' migrationVersion '的迁移
+func (x *XorMigrate) MigrateTo(migrationVersion string) error {
+	if err := x.checkVersionExist(migrationVersion); err != nil {
 		return err
 	}
-	return x.migrate(migrationID)
+	return x.migrate(migrationVersion)
 }
 
 func (x *XorMigrate) migrate(migrationVersion string) error {
@@ -156,11 +156,11 @@ func (x *XorMigrate) migrate(migrationVersion string) error {
 		return ErrNoMigrationDefined
 	}
 	
-	if err := x.checkReservedID(); err != nil {
+	if err := x.checkReservedVersion(); err != nil {
 		return err
 	}
 	
-	if err := x.checkDuplicatedID(); err != nil {
+	if err := x.checkDuplicatedVersion(); err != nil {
 		return err
 	}
 	
@@ -210,31 +210,31 @@ func (x *XorMigrate) hasMigrations() bool {
 	return x.initSchema != nil || len(x.migrations) > 0
 }
 
-// 检查是否有迁移使用保留ID,目前只有一个"SCHEMA_INIT"
-func (x *XorMigrate) checkReservedID() error {
+// 检查是否有迁移使用保留Version,目前只有一个"SCHEMA_INIT"
+func (x *XorMigrate) checkReservedVersion() error {
 	for _, m := range x.migrations {
 		if m.Version == initSchemaMigrationVersion {
-			return &ReservedIDError{Version: m.Version}
+			return &ReservedVersionError{Version: m.Version}
 		}
 	}
 	return nil
 }
 
-// 检查重复ID
-func (x *XorMigrate) checkDuplicatedID() error {
+// 检查重复Version
+func (x *XorMigrate) checkDuplicatedVersion() error {
 	lookup := make(map[string]struct{}, len(x.migrations))
 	for _, m := range x.migrations {
 		if _, ok := lookup[m.Version]; ok {
-			return &DuplicatedIDError{Version: m.Version}
+			return &DuplicatedVersionError{Version: m.Version}
 		}
 		lookup[m.Version] = struct{}{}
 	}
 	return nil
 }
 
-func (x *XorMigrate) checkIDExist(migrationID string) error {
+func (x *XorMigrate) checkVersionExist(migrationVersion string) error {
 	for _, migrate := range x.migrations {
-		if migrate.Version == migrationID {
+		if migrate.Version == migrationVersion {
 			return nil
 		}
 	}
@@ -261,13 +261,13 @@ func (x *XorMigrate) RollbackLast() error {
 	return x.commit()
 }
 
-// RollbackTo 回滚至指定ID
+// RollbackTo 回滚至指定Version
 func (x *XorMigrate) RollbackTo(migrationVersion string) error {
 	if len(x.migrations) == 0 {
 		return ErrNoMigrationDefined
 	}
 	
-	if err := x.checkIDExist(migrationVersion); err != nil {
+	if err := x.checkVersionExist(migrationVersion); err != nil {
 		return err
 	}
 	
@@ -434,7 +434,7 @@ func (x *XorMigrate) canInitializeSchema() (bool, error) {
 		return false, nil
 	}
 	
-	// If the ID doesn't exist, we also want the list of migrations to be empty
+	// If the Version doesn't exist, we also want the list of migrations to be empty
 	var count int64
 	count, err = x.tx.
 		Table(x.options.TableName).
@@ -450,10 +450,10 @@ func (x *XorMigrate) unknownMigrationsHaveHappened() (bool, error) {
 	}
 	defer rows.Close()
 	
-	validIDSet := make(map[string]struct{}, len(x.migrations)+1)
-	validIDSet[initSchemaMigrationVersion] = struct{}{}
+	validVersionSet := make(map[string]struct{}, len(x.migrations)+1)
+	validVersionSet[initSchemaMigrationVersion] = struct{}{}
 	for _, migration := range x.migrations {
-		validIDSet[migration.Version] = struct{}{}
+		validVersionSet[migration.Version] = struct{}{}
 	}
 	
 	for rows.Next() {
@@ -462,7 +462,7 @@ func (x *XorMigrate) unknownMigrationsHaveHappened() (bool, error) {
 			return false, err
 		}
 		pm := reflect.Indirect(reflect.ValueOf(pastMigration))
-		if _, ok := validIDSet[pm.Field(0).String()]; !ok {
+		if _, ok := validVersionSet[pm.Field(0).String()]; !ok {
 			return true, nil
 		}
 	}
@@ -470,9 +470,9 @@ func (x *XorMigrate) unknownMigrationsHaveHappened() (bool, error) {
 	return false, nil
 }
 
-func (x *XorMigrate) insertMigration(id string) error {
+func (x *XorMigrate) insertMigration(version string) error {
 	var err error
-	record := map[string]interface{}{x.options.VersionColumnName: id}
+	record := map[string]interface{}{x.options.VersionColumnName: version}
 	_, err = x.tx.Table(x.options.TableName).Insert(record)
 	return err
 }
@@ -489,7 +489,7 @@ func (x *XorMigrate) rollback() {
 	x.tx.Rollback()
 }
 
-// TimeStampToID 根据时间戳 生成ID
+// GenVersion 根据时间戳 生成version
 func (x *XorMigrate) GenVersion() string {
 	um := time.Now().UnixMicro()
 	t := time.UnixMicro(um)
