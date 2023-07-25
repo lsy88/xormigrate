@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	// 保留ID 只有在初始化时使用
+	// 保留Version 只有在初始化时使用
 	initSchemaMigrationVersion = "SCHEMA_INIT"
 )
 
@@ -38,10 +38,9 @@ type Options struct {
 
 // Migration 数据库迁移操作
 type Migration struct {
-	// ID Usually a timestamp like "201601021504".
+	// Usually a timestamp like "201601021504".
 	// 也可以 "201601021504_tableName" 追踪单表
 	Version string
-	
 	// Migrate 迁移函数
 	Migrate MigrateFunc
 	// Rollback 回滚函数 可为nil
@@ -59,13 +58,13 @@ type XorMigrate struct {
 	initSchema InitSchemaFunc
 }
 
-// ReservedIDError 错误使用保留ID作为某次迁移ID
+// ReservedIDError 错误使用保留version作为某次迁移version
 type ReservedIDError struct {
 	Version string
 }
 
 func (e *ReservedIDError) Error() string {
-	return fmt.Sprintf(`xormigrate: Reserved migration ID: "%s"`, e.Version)
+	return fmt.Sprintf(`xormigrate: Reserved migration Version: %s"`, e.Version)
 }
 
 // DuplicatedIDError 存在重复ID
@@ -74,7 +73,7 @@ type DuplicatedIDError struct {
 }
 
 func (e *DuplicatedIDError) Error() string {
-	return fmt.Sprintf(`xormigrate: Duplicated migration ID: "%s"`, e.Version)
+	return fmt.Sprintf(`xormigrate: Duplicated migration Version: "%s"`, e.Version)
 }
 
 var (
